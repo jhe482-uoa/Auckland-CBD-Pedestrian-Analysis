@@ -1,0 +1,25 @@
+[project]
+name = "auckland-cbd-pedestrain-analysis"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "altair>=6.0.0",
+    "branca>=0.8.2",
+    "contextily>=1.7.0",
+    "folium>=0.20.0",
+    "geopandas>=1.1.2",
+    "holoviews>=1.22.1",
+    "hvplot>=0.12.2",
+    "ipykernel>=7.2.0",
+    "mapclassify>=2.10.0",
+    "matplotlib>=3.10.8",
+    "nbclient>=0.10.4",
+    "nbformat>=5.10.4",
+    "palmerpenguins>=0.1.6",
+    "pandas>=3.0.1",
+    "requests>=2.32.5",
+    "seaborn>=0.13.2",
+]
+
