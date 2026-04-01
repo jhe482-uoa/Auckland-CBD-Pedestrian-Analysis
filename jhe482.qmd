@@ -1,0 +1,335 @@
+---
+title: "What does it take to stop an Aucklander?"
+subtitle: "Auckland CBD Pedestrian Analysis"
+author: "Jeff He"
+format:
+  pdf:
+    toc: false
+    number-sections: false
+    geometry: margin=2.5cm
+---
+
+# Intro
+Auckland is famous for its highly unpredictable weather. On a sunny day it can start raining out of nowhere, then immediately back to being sunny again. This is what most Aucklander describe it as the typical "Auckland weather". Coming from China, my definition of a busy street is very different from NZ's standard. When I first moved to Auckland, the CBD already felt very quiet by comparison. This got me thinking, given the typical "Auckland weather". When it is windy or raining, wouldn't Auckland CBD turn into a ghost town?
+
+To prove my assumption. I have used the pedestrian sensor data from Heart of City Auckland, in conjunction with Open-Meteo's Weather API. I expected to see an significant reduction of pedestrian when it is raining or windy.
+
+But it turns out I was dead wrong...
+
+# Data Analysis
+## 1. Setting up
+Let's start by loading and fixing our data :
+```{python}
+import pandas as pd
+
+ped = pd.read_csv(r"data/akl_ped-2024.csv")
+# ped2025 = pd.read_csv(r"data/akl_ped-2025.csv")
+# ped = pd.concat([ped, ped2025], ignore_index=True)
+ped.rename(columns={"59 High Stret":"59 High Street"}, inplace=True) # Correcting street name
+
+ped = ped.dropna(subset=["Date", "Time"]) # Removing NA
+ped = ped[ped["Date"] != "Daylight Savings"] # Removing daylight saving data entry
+
+sensor_cols = ped.columns[2:]
+
+ped["Datetime"] = pd.to_datetime(ped["Date"] + " " + ped["Time"].str.split("-").str[0]) # Merging date and time
+
+
+# Creating new columns
+ped["Hour"] = ped["Time"].str.split(":").str[0].astype(int)
+ped["Month"] = ped["Datetime"].dt.month
+ped["DayOfWeek"] = ped["Datetime"].dt.dayofweek
+ped["Weekend"] = ped["DayOfWeek"]>=5
+ped["DayName"] = ped["Datetime"].dt.day_name()
+```
+
+Here is the list of sensors we will be using.
+```{python}
+sensor_cols
+```
+
+
+Now let's create a weather API call to Open-Meteo to pull the weather data for our analysis. The weather data I am requesting are:
+
+| Parameter | Definition |
+| :--- | :--- |
+| **temperature_2m** | Temperature in Celsius measured at 2 metre height. |
+| **rain** | Measurement of rain in mm. |
+| **wind_speed_10m** | Wind speed in kmph measured at 10 metre height. |
+| **weather_code** | Weather coding based on WMO (World Meteorological Organization) 4677 code. |
+
+```{python}
+# Parameters for making API call to Open-Meteo
+LATITUDE = 36.8509
+LONGITUDE = 174.7645
+START_DATE = "2024-01-01"
+END_DATE = "2025-12-31"
+PARAMETERS = ["temperature_2m" , "rain", "wind_speed_10m", "weather_code"]
+
+import requests
+
+weather_api = f"https://archive-api.open-meteo.com/v1/archive?latitude={LATITUDE}&longitude={LONGITUDE}&start_date={START_DATE}&end_date={END_DATE}&hourly={','.join(PARAMETERS)}&timezone=auto"
+response = requests.get(weather_api)
+data = response.json()
+
+weather_df = pd.DataFrame(data['hourly'])
+
+weather_df['time'] = pd.to_datetime(weather_df['time'])
+weather_df.head()
+```
+
+
+Now let's merge the two dataframes together.
+
+```{python}
+merged = pd.merge(ped, weather_df, left_on="Datetime", right_on="time",how="inner")
+merged
+```
+
+I have created a 4 mapping functions (temperature, weather code, wind speed, month) that will map the numerical variable into categorical variables for analysis.
+
+```{python}
+def temperature_mapping(temp):
+    """
+    Categorizes temperature based on typical Auckland 
+    pedestrian comfort levels.
+    """
+    if temp < 13:
+        return "1. Cold (<13°C)"
+    elif temp < 17:
+        return "2. Cool (13-17°C)"
+    elif temp < 22:
+        return "3. Mild (17-22°C)"
+    else:
+        return "4. Warm (>22°C)"
+
+def weather_code_mapping(code):
+    """
+    Maps weather code based on WMO(World Meteorological Organization) 4677.
+    Given the diversity of code. Weather code has been groupped where similar. 
+    Returns from one of six weather condition.
+    """
+    if code <= 3:
+        return "1. Clear/Dry"
+    elif (4 <= code <= 19) or (30 <= code <= 49):
+        return "2. Low Visibility (Fog/Haze)"
+    elif code in [20, 21, 50, 51, 58, 60, 61, 80]:
+        return "3. Light Rain/Drizzle"
+    elif code in [62, 63, 64, 65, 81, 82, 91, 92]:
+        return "4. Heavy Rain"
+    elif code in [17, 18, 29, 95, 96, 97, 99]:
+        return "5. Storm/Thunderstorm"
+    else:
+        return "6. Other"
+
+def wind_speed_mapping(speed):
+    """
+    Categorizes wind speed based on the Beaufort Scale 
+    and human experience in an urban environment.
+    """
+    if speed < 12:
+        return "1. Light (0-11)"
+    elif speed < 29:
+        return "2. Moderate (12-28)"
+    elif speed < 50:
+        return "3. Strong (29-49)" 
+    elif speed < 75:
+        return "4. Gale (50-74)"
+    else:
+        return "5. Storm (75+)"
+
+
+def season_mapping(month):
+    """
+    Maps month to season based on https://www.newzealand.com/nz/seasons-in-new-zealand/.
+    Returns from one of four seasons.
+    """
+    if month in [3, 4, 5]:
+        return "Autumn"
+    elif month in [6, 7, 8]:
+        return "Winter"
+    elif month in [9, 10, 11]:
+        return "Spring"
+    else:
+        return "Summer"
+
+merged["season"] = merged["Month"].apply(season_mapping)
+merged["temp"] = merged["temperature_2m"].apply(temperature_mapping)
+merged["weather"] = merged["weather_code"].apply(weather_code_mapping)
+merged["wind"] = merged["wind_speed_10m"].apply(wind_speed_mapping)
+merged
+```
+
+A good practice before conducting further modification to our data is to visualise our raw data. To see if we can generate any insightful inference. Let's visualise the raw data, and raw data with weather and wind condition.
+
+```{python}
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 12), sharex=True)
+merged['Total_Count'] = merged[sensor_cols].sum(axis=1)
+sept_data = merged[merged['Month'] == 9]
+
+sns.lineplot(data=sept_data, x='Datetime', y='Total_Count', ax=ax1)
+ax1.set_title("September Auckland CBD Pedestrian Count")
+
+sns.scatterplot(data=sept_data, x='Datetime', y='Total_Count', 
+                hue='weather', palette="viridis", s=15, 
+                edgecolor=None, ax=ax2, zorder=2)
+
+ax2.set_title("September Auckland CBD Pedestrian Count vs Weather Condition")
+ax2.set_ylabel("Total Pedestrians")
+ax2.legend(title="Weather Condition")
+
+
+sns.scatterplot(data=sept_data, x='Datetime', y='Total_Count', 
+                hue='wind', palette="magma", s=15, 
+                edgecolor=None, ax=ax3, zorder=2)
+
+ax3.set_title("September Auckland CBD Pedestrian Count vs Wind Condition")
+ax3.set_ylabel("Total Pedestrians")
+ax3.legend(title="Wind Strength")
+
+plt.xticks(rotation=45)
+plt.xlabel("Date")
+plt.tight_layout()
+plt.show()
+```
+
+From the graphs we can see that there is definitely a seasonlity factor behind the pedestrian count. 
+
+Now let's melt our dataframe to long format and begin our analysis to identify the factors that influence pedestrian count!
+
+```{python}
+ped_long = pd.melt(
+    merged,
+    id_vars=["Datetime", "Month", "DayOfWeek", "Hour", "Weekend", "DayName","season", "temp", "weather", "wind"],
+    value_vars=sensor_cols.tolist(),
+    var_name="location",
+    value_name="count"
+)
+ped_long
+```
+
+
+## 2. Data Analysis
+Lets start off by seeing which variable is correlated with the total pedestrian count.
+```{python}
+plt.figure(figsize=(10, 8)) 
+overall_corr = merged[['Total_Count', 'temperature_2m', 'rain', 'wind_speed_10m', 'Hour']].corr()
+sns.heatmap(overall_corr, annot=True, cmap='coolwarm', fmt=".2f")
+plt.title("Auckland CBD: Weather vs. Pedestrian Correlation")
+plt.show()
+```
+
+Hour is highly correlated with the total pedestrian count. This is no surprise. CBD is where people conduct their business. We should expect lower pedestrian counts outside of business hour. The typical work hour is 9am to 5pm. Since human cannot teleport from one place to another yet (Not that I know of). I will extend the interval by one hour on both the start and end. Hence we will focus only on from 8am to 6pm. This should allow us to focus the effect from other variables.
+
+```{python}
+day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+fig, ax = plt.subplots(figsize=(10,5))
+
+working_hour_df = ped_long[(ped_long["Hour"] >= 8) & (ped_long["Hour"] <= 18)]
+working_hour_mean = working_hour_df.groupby("DayOfWeek")["count"].mean()
+
+non_working_hour_df = ped_long[~((ped_long["Hour"] >= 8) & (ped_long["Hour"] <= 18))]
+non_working_hour_mean = non_working_hour_df.groupby("DayOfWeek")["count"].mean()
+
+
+ax.plot(working_hour_mean.index, working_hour_mean, label='Working Hours')
+ax.plot(non_working_hour_mean.index, non_working_hour_mean, color='aqua', label='Non-Working Hours')
+
+ax.set_title("Average Pedestrain Count By Weekday (8am-6pm)")
+ax.set_ylabel("Pedestrain count")
+ax.legend()
+ax.set_xticks(range(7)) 
+ax.set_xticklabels(day_labels)
+plt.show()
+```
+
+We can see the data makes sense. Mon to Fri is business day. Hence it has higher pedestrian count. We can also see Fri and Sat has a higher non-working hour pedestrian count. Because people tend to relax after a long week of hardwork. Sunday has the lowest pedestrian count because people need to recover for Monday's work. Now let's dive into the main topic. Let's start by analysing temperature. However temperature might be season related. So let start with season first. 
+
+```{python}
+winter_df = working_hour_df[working_hour_df["season"] == "Winter"]
+winter_mean = winter_df.groupby("DayOfWeek")["count"].mean()
+
+autumn_df = working_hour_df[working_hour_df["season"] == "Autumn"]
+autumn_mean = autumn_df.groupby("DayOfWeek")["count"].mean()
+
+summer_df = working_hour_df[working_hour_df["season"] == "Summer"]
+summer_mean = summer_df.groupby("DayOfWeek")["count"].mean()
+
+spring_df = working_hour_df[working_hour_df["season"] == "Spring"]
+spring_mean = spring_df.groupby("DayOfWeek")["count"].mean()
+
+day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+fig, ax = plt.subplots(figsize=(10,5))
+
+ax.plot(spring_mean.index, spring_mean, color='g', label='Spring')
+ax.plot(summer_mean.index, summer_mean, color='r', label='Summer')
+ax.plot(autumn_mean.index, autumn_mean, color='orange', label='Autumn')
+ax.plot(winter_mean.index, winter_mean, color='b', label='Winter')
+
+ax.set_title("Different Season Average Pedestrain Count (8am-6pm)")
+ax.set_ylabel("Pedestrain count")
+ax.legend()
+
+ax.set_xticks(range(7)) 
+ax.set_xticklabels(day_labels)
+
+plt.show()
+```
+
+So there is a seasonality effect on pedestrian count. This means that for each variable, prehaps it would be a good idea to split the analysis by season. Let's visualise that with temperature first.
+
+```{python}
+def display_by_season(df, column, title):
+    day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    fig, axes = plt.subplots(2,2, figsize=(15,10))
+    seasons = ["Spring", "Summer", "Autumn", "Winter"]
+    variables = sorted(df[column].unique())
+    for row in axes:
+        for ax in row:
+            season = seasons.pop(0)
+            season_df = df[df["season"] == season]
+            print(f"{season}'s {column} distribution:")
+            print(season_df[column].value_counts()) # Outputting the distribution
+            for i in variables:
+                i_df = season_df[season_df[column] == i]
+                i_mean = i_df.groupby("DayOfWeek")["count"].mean()
+                ax.plot(i_mean.index, i_mean, label=i)
+                ax.set_title(f"{season} {title}")
+            ax.set_ylabel("Pedestrain count")
+            ax.legend(loc='lower left')
+            ax.set_xticks(range(7)) 
+            ax.set_xticklabels(day_labels)
+    plt.tight_layout()
+    plt.show()
+
+```
+
+```{python}
+display_by_season(working_hour_df, "temp", "Average Pedestrain Count By Temperature (8am-6pm)")
+```
+
+
+
+```{python}
+display_by_season(working_hour_df, "wind", "Average Pedestrain Count By Wind (8am-6pm)")
+```
+
+```{python}
+display_by_season(working_hour_df, "weather", "Average Pedestrain Count By Weather (8am-6pm)")
+```
+
+Looking at the average pedestrian count by weather. It appears that the data is suffering from insufficient data. On certain 
+
+```{python}
+merged
+```
+
+
+
+# Reproducibility
+Link to GitHub repository
+
