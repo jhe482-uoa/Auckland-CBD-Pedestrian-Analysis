@@ -11,3 +11,4 @@ wheels/
 
 *.quarto_ipynb_*
 *.pdf
+*.html
