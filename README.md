@@ -1,9 +1,8 @@
-To run the code, simply copy and paste the following commands in your terminal. Make sure you have navigated to this folder in your terminal!
+To run the code, simply copy and paste the following commands in your terminal.
 
-uv sync
 ```bash
-git clone https://github.com/jhe482-uoa/Auckland-CBD-Pedestrain-Analysis
-cd Auckland-CBD-Pedestrain-Analysis
+git clone https://github.com/jhe482-uoa/Auckland-CBD-Pedestrian-Analysis
+cd Auckland-CBD-Pedestrian-Analysis
 
 source .venv/bin/activate
 uv sync

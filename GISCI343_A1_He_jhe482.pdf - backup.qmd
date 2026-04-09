@@ -1,0 +1,528 @@
+---
+title: "What does it take to stop an Aucklander?"
+subtitle: "Auckland CBD Pedestrian Analysis"
+author: "Jeff He"
+format:
+  pdf:
+    toc: false
+    number-sections: false
+    geometry: margin=2.5cm
+---
+
+# Intro
+Auckland is famous for its highly unpredictable weather. On a sunny day, it can start raining out of nowhere, then immediately turn sunny again. This is what most Aucklanders describe as the typical "Auckland weather". Coming from China, my definition of a busy street is very different from NZ's standard. When I first moved to Auckland, the CBD already felt very quiet by comparison. Given the typical "Auckland weather". Wouldn't Auckland CBD turn into a ghost town as soon as it rained? 
+
+To prove my assumption. I have used the pedestrian sensor data from Heart of City Auckland, in conjunction with Open-Meteo's Weather API. I expected to see a significant reduction in pedestrians when it is raining or windy. 
+
+But it turns out I was dead wrong...
+
+# Data Analysis
+## 1. Setting up
+Let's start by loading and fixing our data. Here are some of the problems I found:
+| Data Issue | Action Taken |
+| :--- | :--- |
+| **Spelling error in sensor name** | Renamed "59 High Stret" to "59 High Street" |
+| **Missing Data / NA values** | Dropped rows missing Date or Time |
+| **Irrelevant entries** | Filtered out "Daylight Savings" timestamp entries |
+| **Date not loaded as the corrected datatype** | Created a new column "Datetime" using "Date" and "Time". Ensuring it is the right datatype. |
+
+```{python}
+import pandas as pd
+ 
+ped = pd.read_csv(r"data/akl_ped-2024.csv") # Loading dataset
+ped.rename(columns={"59 High Stret":"59 High Street"}, inplace=True) # Correcting street name
+
+ped = ped.dropna(subset=["Date", "Time"]) # Removing NA
+ped = ped[ped["Date"] != "Daylight Savings"] # Removing daylight saving data entry
+
+sensor_cols = ped.columns[2:] # Slicing the date and time column from original dataset. Keeping only sensors. 
+
+ped["Datetime"] = pd.to_datetime(ped["Date"] + " " + ped["Time"].str.split("-").str[0]) # Merging date and time
+
+
+# Creating new columns
+ped["Hour"] = ped["Time"].str.split(":").str[0].astype(int)
+ped["Month"] = ped["Datetime"].dt.month
+ped["DayOfWeek"] = ped["Datetime"].dt.dayofweek
+```
+
+Here is the list of sensors we will be using.
+```{python}
+sensor_cols
+```
+
+Before we do anything more. It may be a good idea to visualise our data first.
+```{python}
+import folium
+from folium.plugins import HeatMap
+
+sensor_means = ped[sensor_cols].mean() # Computing the average ped count for each sensors
+
+sensor_means = sensor_means.reset_index() # Converting index column to normal column
+sensor_means.columns = ['Sensor', 'Avg_Count'] # Renaming the column
+
+geo_location = pd.read_csv(r"data/akl_ped-Geodata.csv") # Loading data with geo coordinate for each sensor
+
+map_data = pd.merge(sensor_means, geo_location, left_on='Sensor', right_on='Address') # Merging the data
+
+ped_avg_data = [[row['Latitude'], row['Longitude'], row['Avg_Count']] for index, row in map_data.iterrows()] # Creating list formated data for folium
+
+m = folium.Map(location=[-36.8485, 174.7633], zoom_start=15, tiles="CartoDB positron") # Creating a base map focused on Queen St
+
+HeatMap(ped_avg_data, radius=25, blur=15, gradient={0.4: 'blue', 0.65: 'lime', 1: 'red'}).add_to(m) # Adding the HeatMap layer to the folium map
+
+
+# Adding markers data popup.
+for index, row in map_data.iterrows():
+    folium.CircleMarker(
+        location=[row['Latitude'], row['Longitude']],
+        radius=5,
+        popup=f"{row['Sensor']}: {int(row['Avg_Count'])} avg/hr",
+        color='black',
+        fill=True,
+        fill_opacity=0.7
+    ).add_to(m)
+m.save("Ped Avg Count By Sensor Spatial Map.html")
+m
+```
+
+We can see that 30 Queen Street has the highest average pedestrian per hour of 734, and 1 Courthouse Lane has the lowest average pedestrian per hour count of 51. However without further context. We cannot generate additional meaningful insights.
+
+Now let's create an API call to Open-Meteo to pull the weather data for our analysis. The weather data I am requesting are:
+
+| Parameter | Definition |
+| :--- | :--- |
+| **temperature_2m** | Temperature in Celsius measured at 2 metre height. |
+| **rain** | Measurement of rain in mm. |
+| **wind_speed_10m** | Wind speed in kmph measured at 10 metre height. |
+| **weather_code** | Weather coding based on WMO (World Meteorological Organization) 4677 code. |
+
+```{python}
+# Parameters for making API call to Open-Meteo
+LATITUDE = 36.8509
+LONGITUDE = 174.7645
+START_DATE = "2024-01-01"
+END_DATE = "2024-12-31"
+PARAMETERS = ["temperature_2m" , "rain", "wind_speed_10m", "weather_code"]
+
+import requests
+
+weather_api = f"https://archive-api.open-meteo.com/v1/archive?latitude={LATITUDE}&longitude={LONGITUDE}&start_date={START_DATE}&end_date={END_DATE}&hourly={','.join(PARAMETERS)}&timezone=auto" # Creating API link
+response = requests.get(weather_api) # Requesting data
+data = response.json() # Formatting the data to json.
+
+weather_df = pd.DataFrame(data['hourly']) # Converting the values for hourly weather to dataframe.
+
+weather_df['time'] = pd.to_datetime(weather_df['time']) # Updating the datatype.
+weather_df.head()
+```
+
+It will be a good idea to categorise these quantitative values now for future analysis. So lets define some functions to do so.
+
+```{python}
+def temperature_mapping(temp):
+    """
+    Categorizes temperature based on typical Auckland pedestrian comfort levels.
+
+    Parameters
+    ----------
+    temp : float
+        Temperature in degrees Celsius.
+
+    Returns
+    -------
+    str
+        One of four temperature categories (Cold, Cool, Mild, Warm).
+    """
+    if temp < 13:
+        return "1. Cold (<13°C)"
+    elif temp < 17:
+        return "2. Cool (13-17°C)"
+    elif temp < 22:
+        return "3. Mild (17-22°C)"
+    else:
+        return "4. Warm (>22°C)"
+
+def weather_code_mapping(code):
+    """
+    Maps WMO 4677 weather codes to simplified pedestrian-focused categories.
+
+    Parameters
+    ----------
+    code : int
+        WMO Weather interpretation code.
+
+    Returns
+    -------
+    str
+        Simplified weather condition (e.g., 'Clear/Dry', 'Heavy Rain', 'Storm').
+    """
+    if code <= 3:
+        return "1. Clear/Dry" # Adding number infront for sorting
+    elif (4 <= code <= 19) or (30 <= code <= 49):
+        return "2. Low Visibility (Fog/Haze)"
+    elif code in [20, 21, 50, 51, 58, 60, 61, 80]:
+        return "3. Light Rain/Drizzle"
+    elif code in [62, 63, 64, 65, 81, 82, 91, 92]:
+        return "4. Heavy Rain"
+    elif code in [17, 18, 29, 95, 96, 97, 99]:
+        return "5. Storm/Thunderstorm"
+    else:
+        return "6. Other"
+
+def wind_speed_mapping(speed):
+    """
+    Categorizes wind speed using a simplified scale inspired by the Beaufort Scale.
+
+    Parameters
+    ----------
+    speed : float
+        Wind speed in km/h.
+
+    Returns
+    -------
+    str
+        Wind intensity category from 1 (Light) to 5 (Storm).
+    """
+    if speed < 12:
+        return "1. Light (0-11)"
+    elif speed < 29:
+        return "2. Moderate (12-28)"
+    elif speed < 50:
+        return "3. Strong (29-49)" 
+    elif speed < 75:
+        return "4. Gale (50-74)"
+    else:
+        return "5. Storm (75+)"
+
+
+def season_mapping(month):
+    """
+    Maps calendar months to New Zealand's meteorological seasons.
+
+    Parameters
+    ----------
+    month : int
+        The month as an integer (1-12).
+
+    Returns
+    -------
+    str
+        The corresponding New Zealand season (Autumn, Winter, Spring, Summer).
+    """
+    if month in [3, 4, 5]:
+        return "Autumn"
+    elif month in [6, 7, 8]:
+        return "Winter"
+    elif month in [9, 10, 11]:
+        return "Spring"
+    else:
+        return "Summer"
+
+# Applying the mapping fucntions
+weather_df["season"] = weather_df["time"].dt.month.apply(season_mapping)
+weather_df["temp"] = weather_df["temperature_2m"].apply(temperature_mapping)
+weather_df["weather"] = weather_df["weather_code"].apply(weather_code_mapping)
+weather_df["wind"] = weather_df["wind_speed_10m"].apply(wind_speed_mapping)
+weather_df
+```
+
+Now let's merge the our weather dataset and our pedestrian count dataset together.
+
+```{python}
+merged = pd.merge(ped, weather_df, left_on="Datetime", right_on="time",how="inner") # Merging the dataset
+ped_long = pd.melt(
+    merged,
+    id_vars=["Datetime", "Hour", "DayOfWeek","temp", "weather", "wind", "season"],
+    value_vars=sensor_cols.tolist(),
+    var_name="location",
+    value_name="count"
+) # Melting the dataset from wide format to long format
+ped_long
+```
+
+Finnaly, lets start our analysis!
+
+## 2. Visualising the Data
+
+Let's begin by seeing what variable is correlated with pedestrian count.
+
+```{python}
+#| fig-cap: "Correlation Heatmap"
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+plt.figure(figsize=(10, 8)) 
+merged['Total_Count'] = merged[sensor_cols].sum(axis=1) # Merging the count by row. To obtain hourly ped sum.
+
+overall_corr = merged[['Total_Count', 'temperature_2m', 'rain', 'wind_speed_10m', 'Hour']].corr() # Generating corrlation matrix with the selected variables
+sns.heatmap(overall_corr, annot=True, cmap='coolwarm', fmt=".2f") # Displaying the corrlation matrix
+plt.title("Auckland CBD Pedestrian Correlation Analysis") # Adding title to the plot
+plt.show()
+```
+
+It would appear that hour is highly correlated with the total pedestrian count. This is no surprise. CBD is where people conduct their business. We should expect lower pedestrian counts outside of business hour. The typical work hour is 9am to 5pm. Since humans cannot teleport from one place to another yet (Not that I know of). I will extend the interval by one hour on both the start and end, as we should expect to see an increase in pedestrian count an hour prior/after start/end time. Thus we limit our analysis to 8am - 6pm. This should allow us to focus the effect coming from other variables.
+
+
+```{python}
+#| fig-cap: "Average Pedestrian Count By Weekday (Working Hours vs Non-working Hours)"
+
+fig, ax = plt.subplots(figsize=(10,5))
+
+working_hour_df = ped_long[(ped_long["Hour"] >= 8) & (ped_long["Hour"] < 18)]  # Non inclusive of 18. Because due to the way dataset is set up. 18 is 18:00-18:59.
+working_hour_mean = working_hour_df.groupby("DayOfWeek")["count"].mean() # Obtaining weekday average
+
+non_working_hour_df = ped_long[~((ped_long["Hour"] >= 8) & (ped_long["Hour"] < 18))]
+non_working_hour_mean = non_working_hour_df.groupby("DayOfWeek")["count"].mean()
+
+# Plotting the two data to the same axis
+ax.plot(working_hour_mean.index, working_hour_mean, label='Working Hours (8am-6pm)') 
+ax.plot(non_working_hour_mean.index, non_working_hour_mean, color='aqua', label='Non-Working Hours (6pm-8am)')
+
+ax.set_title("Average Pedestrian Count By Weekday")
+ax.set_ylabel("Pedestrian count")
+ax.legend() # Displaying legend
+plt.xticks([0,1,2,3,4,5,6], ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) # Setting up custom x labels.
+
+plt.show()
+```
+
+This data showing average pedestrian count by weekday makes sense. As Mon to Fri is business day, hence it has higher pedestrian count during working hours. Fri and Sat has a higher non-working hour pedestrian count, as people tend to relax and hangout after a long week of work. Sunday has the lowest pedestrian count in the non-working hour because people can't stay out late for Monday's work. 
+
+Now let's dive into the main topic. Let's kick things off with analysing the wind speed. Auckland CBD has significantly lower skyscraper count than other megacities, and New Zealand is an island country. Hence the pedestrians faces from higher wind speed all the time. Could this dramatically affect the pedestrian count?
+
+```{python}
+def box_plot(df, column, title):
+    """
+    Generates a boxplot to visualize pedestrian count distribution across categories.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The dataset containing pedestrian counts and categorical variables.
+    column : str
+        The column name to categorize the x-axis (e.g., 'wind' or 'weather').
+    title : str
+        The title for the generated plot.
+
+    Returns
+    -------
+    tuple (pd.Series, pd.Series)
+        A tuple containing the value counts of the categories and the mean counts.
+    """
+    fig, ax = plt.subplots(figsize=(12,8))
+    order = sorted(df[column].unique()) # Organising the order for better visual
+
+    sns.boxplot(data=df, x=column, y="count", hue=column, ax=ax, order=order)
+    ax.set_ylabel("Pedestrian count")
+    ax.set_title(f"{title}")
+    plt.tight_layout()
+    plt.show()
+    return df[column].value_counts(), df.groupby(column)["count"].mean() # Returning the distribution and mean for each category
+```
+
+```{python}
+#| fig-cap: "Average Pedestrian Count By Wind (8am-6pm)"
+
+distribution, mean = box_plot(working_hour_df, "wind", "Average Pedestrian Count By Wind (8am-6pm)")
+print(distribution)
+print(mean)
+```
+
+While the mean for pedestrian count across wind categories appears to be similar. However there is a noticable reduction in the number of outliers for storm wind speed. This does suggest that wind speed has some impact on pedestrian count, however this could also be due to the smaller sample size. Looking back at the whole dataset. The average wind speed is 31 km/h. It is no wonder why wind speed has such a little impact on pedestrian count. Because Aucklanders are already used to strong wind!
+
+Let's then analyse the temperature. However temperature is season related. If it is  hot outside during the summer. People may choose to stay cool indoor. But this is the opposite in winter. When the outdoor temperature is nice and warm. We should see an increase in pedestrian count over cold temperature.
+
+
+```{python}
+def display_by_season_box_plot(df, column, title):
+    """
+    Creates a 2x2 grid of boxplots comparing pedestrian counts by season.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The long-format dataset containing a 'season' column.
+    column : str
+        The categorical weather variable to analyze.
+    title : str
+        The suffix for the subplot titles.
+
+    Returns
+    -------
+    dict
+        A dictionary keyed by season, containing value counts and mean statistics.
+    """
+    fig, axes = plt.subplots(2,2, figsize=(15,10))
+    seasons = ["Spring", "Summer", "Autumn", "Winter"]
+    distribution_dict = dict()
+    order = sorted(df[column].unique())
+    for row in axes:
+        for ax in row:
+            season = seasons.pop(0)
+            season_df = df[df["season"] == season]
+            distribution_dict[season] = [season_df[column].value_counts(), season_df.groupby(column)["count"].mean()] # Adding season column distribution and mean to dict
+            sns.boxplot(data=season_df, x=column, y="count", hue=column, ax=ax, order=order)
+            ax.set_ylabel("Pedestrian count")
+            ax.set_title(f"{season} {title}")
+    plt.tight_layout()
+    plt.show()
+    return distribution_dict
+```
+
+
+```{python}
+#| fig-cap: "Average Pedestrian Count By Temperature (8am-6pm)"
+
+distribution_dict = display_by_season_box_plot(working_hour_df, "temp", "Average Pedestrian Count By Temperature (8am-6pm)")
+distribution_dict
+```
+
+We are seeing exact what we are expecting. During summer, while not by much. The average pedestrian count is ever so slightly higher when it is cold. In winter this is more noticable. The pedestrian count for mild or warm is higher than when it was cold. 
+
+Now lets take a look at rain. Rain should make a pretty big impact on pedestrian count. When I first moved to Auckland. One thing I noticed is that people don't tend to keep an umbrella in their bag. So you often see people running in the rain. Soaking wet. So could this be what makes the CBD a ghost town?
+
+```{python}
+#| fig-cap: "Average Pedestrian Count By Weather (8am-6pm)"
+distribution, mean = box_plot(working_hour_df, "weather", "Average Pedestrian Count By Weather (8am-6pm)")
+print(distribution)
+```
+
+No. Again we are seeing similar trends as the wind speed. While the mean pedestrian count appears similar across all four weather scenario. But there is a noticeable redunction in outliers for both Light Rain/Drizzle and Heavy Rain compared to Clear/Dry. It appears that Aucklanders are very stubborn. No matter if it is pouring outside, or there is a storm. Aucklanders will always get to where they need to be, whether dry or completely soaking wet. This is very inspirational!
+
+Let's put Aucklanders up to the final test! Let's test the scenario where it is heavy rain with a storm. Will this be the final blow to take down the almighty Aucklanders?
+
+```{python}
+def classify_stress(row):
+    """
+    Categorizes individual rows into weather stress scenarios based on extreme conditions.
+
+    Parameters
+    ----------
+    row : pd.Series
+        A single row from the pedestrian-weather dataframe.
+
+    Returns
+    -------
+    str
+        A category label (e.g., 'Baseline', 'Storm Only', 'Both').
+    """
+    is_windy = row['wind'] == "5. Storm (75+)" # Creating boolean series
+    is_rainy = row['weather'] == "4. Heavy Rain"
+    
+    if is_windy and is_rainy:
+        return "4. Both (Storm & Heavy Rain)"
+    elif is_windy:
+        return "3. Storm Only"
+    elif is_rainy:
+        return "2. Heavy Rain Only"
+    else:
+        return "1. Baseline (Clear/Calm)"
+
+working_hour_df["weather_stress"] = working_hour_df.apply(classify_stress, axis=1) # Axis = 1 applying the function to each row.
+```
+
+```{python}
+#| fig-cap: "Average Pedestrian Count By Scenarios (8am-6pm)"
+distribution, mean = box_plot(working_hour_df, "weather_stress", "Average Pedestrian Count By Scenarios (8am-6pm)")
+print(distribution)
+```
+
+No significant difference in the mean again! While the outliers have significantly reduced. But this could be due to the underlying sample has reduced from my rigorous scenario. Perhaps the extreme weather has altered the underlying heat pattern?
+
+```{python}
+
+def display_spatial_map(df, column, geo_df, display_marker=False):
+    """
+    Generates an interactive Folium HeatMap with toggleable layers for different scenarios.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The dataset containing location names and pedestrian counts.
+    column : str
+        The column to split the layers by (e.g., 'weather_stress').
+    geo_df : pd.DataFrame
+        Dataframe containing 'Latitude', 'Longitude', and 'Address' for sensors.
+    display_marker : bool, optional
+        Whether to add individual circle markers for each sensor, by default False.
+
+    Returns
+    -------
+    folium.Map
+        An interactive map object.
+    """
+    import folium
+    from folium.plugins import HeatMap
+    import pandas as pd
+
+    m = folium.Map(location=[-36.8485, 174.7633], zoom_start=15, tiles="CartoDB positron") # Creating base map
+
+    scenarios = sorted(df[column].unique()) # Obtaining unique categories
+
+    for scenario in scenarios:
+        group = folium.FeatureGroup(name=str(scenario))
+        
+        scenario_df = df[df[column] == scenario] # Filter by scenario
+        
+        means = scenario_df.groupby("location")["count"].mean().reset_index() # Groupby first because it is in long format. Then obtaining the mean and setting the index column to a normal column
+        
+        map_df = pd.merge(means, geo_df, left_on='location', right_on='Address') # Merging the data
+
+        # Creating heat map for the scenario
+        heat_data = [[row['Latitude'], row['Longitude'], row['count']] for _, row in map_df.iterrows()] 
+        HeatMap(heat_data, radius=25, blur=15, gradient={0.4: 'blue', 0.65: 'lime', 1: 'red'}).add_to(group)
+        
+        if display_marker:
+            # Add Markers to this scenario
+            for _, row in map_df.iterrows():
+                folium.CircleMarker(
+                    location=[row['Latitude'], row['Longitude']],
+                    radius=5, 
+                    color='black',
+                    fill=True,
+                    fill_opacity=0.7,
+                    popup=folium.Popup(f"<b>{scenario}</b><br>{row['location']}<br>Avg: {int(row['count'])}/hr", max_width=200)
+                ).add_to(group)
+        
+        group.add_to(m)
+
+
+    folium.LayerControl().add_to(m) # Adding the controls
+    
+    m.save(f"Auckland_CBD_Weather_{column}_Map.html")
+    return m
+```
+
+```{python}
+#| fig-cap: "Average Pedestrian Count Spatial Map By Scenarios"
+
+m = display_spatial_map(working_hour_df, "weather_stress", geo_location)
+m
+```
+
+Looking at the heat map. The pattern between baseline and extreme weather is roughly the same. It appears that my assumption is wrong, and I must admit defeat to Aucklanders. I guess if you are an Aucklander. You will always get to where you need to be if you want to, and it will take more than just the weather to stop you. Round of applause to Aucklanders.
+
+
+## 3. Technical Limitations
+The year analysed is only 2024. Therefore the finding only applies to 2024. In other years there may have been a relationship between pedestrian count and temperature/wind speed/weather variables. 
+
+Open-Meteo only provides hourly weather data. But it doesn't disclose how the hourly weather data is measured. For instance we do not know if it rained for the whole hour, or just for one minute. Given the "typical" Auckland weather. This makes a significant difference.
+
+There may also have been limitation on the sensor cameras. It may be inadequate to capture all the pedestrian in the street. There is also a possibility that it has double counted pedestrian, or is unable to pickup certain pedestrian. 
+
+The limited positions of the sensors may not provide us the whole picture. Certain locations may see a stronger correlation between the pedestrian count and temperature/wind speed/weather variables.
+
+
+# Reproducibility
+The code used for this analysis can be found in the GitHub repository:
+https://github.com/jhe482-uoa/Auckland-CBD-Pedestrian-Analysis
+
+A readme file can be found for the instructions on how to run the code.
+
+
+
+
+# Code Walkthrough
+A X minutes video below explaining the code:
+
