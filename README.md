@@ -10,7 +10,9 @@ Key Finding: Aucklanders are remarkably "stubborn". While extreme weather dampen
 ## Getting Started
 ### Prerequisites:
 Python: 3.13+
+
 Install uv: pip install uv
+
 Install Quarto: http://quarto.org/
 
 ### Installation & Reproduction:
