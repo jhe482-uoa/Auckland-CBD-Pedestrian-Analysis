@@ -5,10 +5,10 @@ build/
 dist/
 wheels/
 *.egg-info
-
 # Virtual environments
 .venv
 
 *.quarto_ipynb_*
 *.pdf
 *.html
+.DS_Store
