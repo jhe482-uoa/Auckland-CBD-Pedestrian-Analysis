@@ -83,7 +83,7 @@ for index, row in map_data.iterrows():
         fill=True,
         fill_opacity=0.7
     ).add_to(m)
-m.save("Ped Avg Count By Sensor Spatial Map.html")
+# m.save("Ped Avg Count By Sensor Spatial Map.html")
 m
 ```
 
@@ -200,6 +200,8 @@ Finnaly, lets start our analysis!
 
 Let's begin by seeing what variable is correlated with pedestrian count.
 
+It would appear that hour is highly correlated with the total pedestrian count. This is no surprise. CBD is where people conduct business. We should expect lower pedestrian counts outside of business hour. The typical work hour is 9am to 5pm. Since humans cannot teleport from one place to another yet (Not that I know of). I will extend the interval by one hour on both the start and end, as we should expect to see an increase in pedestrian count an hour prior/after start/end time. Thus we limit our analysis to 8am - 6pm. This should allow us to focus the effect coming other variables.
+
 ```{python}
 #| fig-cap: "Correlation Heatmap"
 import matplotlib.pyplot as plt
@@ -214,8 +216,9 @@ plt.title("Auckland CBD Pedestrian Correlation Analysis") # Adding title to the 
 plt.show()
 ```
 
-It would appear that hour is highly correlated with the total pedestrian count. This is no surprise. CBD is where people conduct business. We should expect lower pedestrian counts outside of business hour. The typical work hour is 9am to 5pm. Since humans cannot teleport from one place to another yet (Not that I know of). I will extend the interval by one hour on both the start and end, as we should expect to see an increase in pedestrian count an hour prior/after start/end time. Thus we limit our analysis to 8am - 6pm. This should allow us to focus the effect coming other variables.
+This data showing average pedestrian count by weekday makes sense. As Mon to Fri is business day, hence it has higher pedestrian count during working hours. Fri and Sat has a higher non-working hour pedestrian count, as people tend to relax and hangout after a long week of work. Sunday has the lowest pedestrian count in the non-working hour because people can't stay out late for Monday's work. 
 
+Now let's dive into the main topic. Let's kick things off with analysing the wind speed. Auckland CBD has significantly lower skyscraper count than other megacities, and New Zealand is an island country. Hence the pedestrians faces from higher wind speed all the time. Could this dramatically affect the pedestrian count?
 
 ```{python}
 #| fig-cap: "Average Pedestrian Count By Weekday (Working Hours vs Non-working Hours)"
@@ -240,12 +243,12 @@ plt.xticks([0,1,2,3,4,5,6], ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) #
 plt.show()
 ```
 
-This data showing average pedestrian count by weekday makes sense. As Mon to Fri is business day, hence it has higher pedestrian count during working hours. Fri and Sat has a higher non-working hour pedestrian count, as people tend to relax and hangout after a long week of work. Sunday has the lowest pedestrian count in the non-working hour because people can't stay out late for Monday's work. 
+While the mean for pedestrian count across wind categories appears to be similar. However there is a noticeable reduction in the number of outliers for storm wind speed. While this suggest that wind speed has some impact on pedestrian count, but this more likely due to the smaller sample size. Looking back at the whole dataset. The average wind speed is 31 km/h. It is no wonder why wind speed has such a little impact on pedestrian count. Because Aucklanders are already used to strong wind!
 
-Now let's dive into the main topic. Let's kick things off with analysing the wind speed. Auckland CBD has significantly lower skyscraper count than other megacities, and New Zealand is an island country. Hence the pedestrians faces from higher wind speed all the time. Could this dramatically affect the pedestrian count?
+Let's then analyse the weather. Rain should make a pretty big impact on pedestrian count. When I first moved to Auckland. One thing I noticed is that people don't tend to keep an umbrella in their bag. So you often see people running in the rain. Soaking wet. So could this be what makes the CBD a ghost town?
 
 ```{python}
-def box_plot(df, column, title):
+def display_box_plot(df, column, title):
     """
     Generates a boxplot to visualize pedestrian count distribution across categories.
 
@@ -277,24 +280,22 @@ def box_plot(df, column, title):
 ```{python}
 #| fig-cap: "Average Pedestrian Count By Wind (8am-6pm)"
 
-distribution, mean = box_plot(working_hour_df, "wind", "Average Pedestrian Count By Wind (8am-6pm)")
+distribution, mean = display_box_plot(working_hour_df, "wind", "Average Pedestrian Count By Wind (8am-6pm)")
 print(distribution)
 print(mean)
-```
-
-While the mean for pedestrian count across wind categories appears to be similar. However there is a noticeable reduction in the number of outliers for storm wind speed. While this suggest that wind speed has some impact on pedestrian count, but this more likely due to the smaller sample size. Looking back at the whole dataset. The average wind speed is 31 km/h. It is no wonder why wind speed has such a little impact on pedestrian count. Because Aucklanders are already used to strong wind!
-
-Let's then analyse the weather. Rain should make a pretty big impact on pedestrian count. When I first moved to Auckland. One thing I noticed is that people don't tend to keep an umbrella in their bag. So you often see people running in the rain. Soaking wet. So could this be what makes the CBD a ghost town?
-
-```{python}
-#| fig-cap: "Average Pedestrian Count By Weather (8am-6pm)"
-distribution, mean = box_plot(working_hour_df, "weather", "Average Pedestrian Count By Weather (8am-6pm)")
-print(distribution)
 ```
 
 No. Again we are seeing similar trends as the wind speed. While the mean pedestrian count appears similar across all four weather scenario. But there is a noticeable redunction in outliers for both Light Rain/Drizzle and Heavy Rain compared to Clear/Dry. It appears that Aucklanders are very stubborn. No matter if it is pouring outside, or there is a storm. Aucklanders will always get to where they need to be, whether dry or completely soaking wet. This is very inspirational!
 
 Let's put Aucklanders up to the final test! Let's test the scenario where it is heavy rain with a storm. Will this be the final blow to take down the almighty Aucklanders?
+
+```{python}
+#| fig-cap: "Average Pedestrian Count By Weather (8am-6pm)"
+distribution, mean = display_box_plot(working_hour_df, "weather", "Average Pedestrian Count By Weather (8am-6pm)")
+print(distribution)
+```
+
+No significant difference in the mean again! While the outliers have significantly reduced. But this could be due to the underlying sample has reduced from my rigorous scenario. Perhaps the extreme weather has altered the underlying heat pattern?
 
 ```{python}
 def classify_stress(row):
@@ -328,11 +329,11 @@ working_hour_df["weather_stress"] = working_hour_df.apply(classify_stress, axis=
 
 ```{python}
 #| fig-cap: "Average Pedestrian Count By Scenarios (8am-6pm)"
-distribution, mean = box_plot(working_hour_df, "weather_stress", "Average Pedestrian Count By Scenarios (8am-6pm)")
+distribution, mean = display_box_plot(working_hour_df, "weather_stress", "Average Pedestrian Count By Scenarios (8am-6pm)")
 print(distribution)
 ```
 
-No significant difference in the mean again! While the outliers have significantly reduced. But this could be due to the underlying sample has reduced from my rigorous scenario. Perhaps the extreme weather has altered the underlying heat pattern?
+Looking at the heat map. They all look identical. What if I told you they are actually the same image? That would make a hilarious joke but no. If you look closely, only in high wind speed (Storm) we can see an arise of a new hotspot in the central of CBD. This could be again due to sampling, or because central CBD has a cluster of skyscrapers. The wind is blocked by the skyscrapers altering pedestrian movement pattern. But that goes beyond the study of this article.
 
 ```{python}
 
@@ -394,7 +395,7 @@ def display_spatial_map(df, column, geo_df, display_marker=False):
 
     folium.LayerControl().add_to(m) # Adding the controls
     
-    m.save(f"Auckland_CBD_Weather_{column}_Map.html")
+    # m.save(f"Auckland_CBD_{column}_Map.html")
     return m
 ```
 
@@ -405,18 +406,7 @@ m = display_spatial_map(working_hour_df, "weather_stress", geo_location)
 m
 ```
 
-Looking at the heat map. The pattern between baseline and extreme weather is roughly the same. It appears that my assumption is wrong, and I must admit defeat to Aucklanders. I guess if you are an Aucklander. You will always get to where you need to be if you want to, and it will take more than just the weather to stop you. Round of applause to Aucklanders.
-
-
-## 3. Technical Limitations
-
-This study only analyzed the pedestrian dataset from 2024. Therefore the finding only applicable to 2024. This study does not apply to other years. In other years there may have been a relationship between pedestrian count and temperature/wind speed/weather variables. 
-
-Open-Meteo only provides hourly weather data. But it doesn’t disclose how the hourly weather data is measured. For instance we do not know if it rained for the whole hour, or just for one minute. Given the typical “Auckland weather”. This could make a significant difference.
-
-There may have been limitation on the sensor cameras. It may be inadequate to capture all the pedestrian in the street. There is also a possibility that it has double counted pedestrian, or is unable to pickup some pedestrians. 
-
-The limited positions of the sensors may not provide us the whole picture. Certain locations may see a stronger correlation between the pedestrian count and temperature/wind speed/weather variables.
+It appears that my assumption is wrong, and I must admit defeat to Aucklanders. I guess if you are an Aucklander. You will always get to where you need to be if you want to, and it will take more than just the weather to stop you. Round of applause to Aucklanders.
 
 # Final Remark
 
@@ -430,6 +420,15 @@ This includes people who visits Auckland CBD on an occasional basis. Including t
 
 One potential explanation is that, the mean stays consistent is largely due to the essential workers group - people who have to go to Auckland CBD regardless of the weather situation. Whereas the weather factors only affects the casual shoppers. Which explains the significant drop in the outliers. Regardless, the Aucklanders has earned my respect for being unstoppable. 
 
+# Technical Limitations
+
+This study only analyzed the pedestrian dataset from 2024. Therefore the finding only applicable to 2024. This study does not apply to other years. In other years there may have been a relationship between pedestrian count and temperature/wind speed/weather variables. 
+
+Open-Meteo only provides hourly weather data. But it doesn’t disclose how the hourly weather data is measured. For instance we do not know if it rained for the whole hour, or just for one minute. Given the typical “Auckland weather”. This could make a significant difference.
+
+There may have been limitation on the sensor cameras. It may be inadequate to capture all the pedestrian in the street. There is also a possibility that it has double counted pedestrian, or is unable to pickup some pedestrians. 
+
+The limited positions of the sensors may not provide us the whole picture. Certain locations may see a stronger correlation between the pedestrian count and temperature/wind speed/weather variables.
 
 
 # Reproducibility
@@ -437,8 +436,6 @@ The code used for this analysis can be found in the GitHub repository:
 https://github.com/jhe482-uoa/Auckland-CBD-Pedestrian-Analysis
 
 A readme file can be found for the instructions on how to run the code.
-
-
 
 
 # Code Walkthrough
