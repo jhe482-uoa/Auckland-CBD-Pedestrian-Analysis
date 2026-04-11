@@ -399,11 +399,26 @@ def display_spatial_map(df, column, geo_df, display_marker=False):
     return m
 ```
 
+Similarly, the underlying pedestrian movement pattern remains similar with different wind and weather conditions.
 ```{python}
 #| fig-cap: "Average Pedestrian Count Spatial Map By Scenarios"
 
-m = display_spatial_map(working_hour_df, "weather_stress", geo_location)
-m
+stress = display_spatial_map(working_hour_df, "weather_stress", geo_location, True)
+stress
+```
+
+```{python}
+#| fig-cap: "Average Pedestrian Count Spatial Map By Wind"
+
+wind = display_spatial_map(working_hour_df, "wind", geo_location, True)
+wind
+```
+
+```{python}
+#| fig-cap: "Average Pedestrian Count Spatial Map By Weather"
+
+weather = display_spatial_map(working_hour_df, "weather", geo_location, True)
+weather
 ```
 
 It appears that my assumption is wrong, and I must admit defeat to Aucklanders. I guess if you are an Aucklander. You will always get to where you need to be if you want to, and it will take more than just the weather to stop you. Round of applause to Aucklanders.
@@ -439,5 +454,5 @@ A readme file can be found for the instructions on how to run the code.
 
 
 # Code Walkthrough
-A X minutes video below explaining the code:
-
+A 10 minutes video below explaining the code:
+https://www.youtube.com/watch?v=GhpLjjLjCfw
