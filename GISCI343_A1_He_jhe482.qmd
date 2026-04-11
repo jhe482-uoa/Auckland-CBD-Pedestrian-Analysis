@@ -54,6 +54,8 @@ sensor_cols
 
 Before we do anything more. It may be a good idea to visualise our data first.
 ```{python}
+#| fig-cap: "Spatial Map Average Pedestrian Count By Sensor"
+
 import folium
 from folium.plugins import HeatMap
 
@@ -194,7 +196,7 @@ ped_long = pd.melt(
 ped_long
 ```
 
-Finnaly, lets start our analysis!
+Finally, lets start our analysis!
 
 ## 2. Visualising the Data
 
@@ -216,9 +218,8 @@ plt.title("Auckland CBD Pedestrian Correlation Analysis") # Adding title to the 
 plt.show()
 ```
 
-This data showing average pedestrian count by weekday makes sense. As Mon to Fri is business day, hence it has higher pedestrian count during working hours. Fri and Sat has a higher non-working hour pedestrian count, as people tend to relax and hangout after a long week of work. Sunday has the lowest pedestrian count in the non-working hour because people can't stay out late for Monday's work. 
+Let's gain some insight about Auckland pedestrian by visualising the the effect of hour by weekday. It aligns with our typical assumption - as Mon to Fri is business day, it has higher pedestrian count during working hours. Fri and Sat has a higher non-working hour pedestrian count, as people tend to relax and hangout after a long week of work. Sunday has the lowest pedestrian count in the non-working hour because people can't stay out late for Monday's work. 
 
-Now let's dive into the main topic. Let's kick things off with analysing the wind speed. Auckland CBD has significantly lower skyscraper count than other megacities, and New Zealand is an island country. Hence the pedestrians faces from higher wind speed all the time. Could this dramatically affect the pedestrian count?
 
 ```{python}
 #| fig-cap: "Average Pedestrian Count By Weekday (Working Hours vs Non-working Hours)"
@@ -243,9 +244,9 @@ plt.xticks([0,1,2,3,4,5,6], ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) #
 plt.show()
 ```
 
-While the mean for pedestrian count across wind categories appears to be similar. However there is a noticeable reduction in the number of outliers for storm wind speed. While this suggest that wind speed has some impact on pedestrian count, but this more likely due to the smaller sample size. Looking back at the whole dataset. The average wind speed is 31 km/h. It is no wonder why wind speed has such a little impact on pedestrian count. Because Aucklanders are already used to strong wind!
+Now let's dive into the main topic. Let's kick things off with analysing the wind speed. Auckland CBD has significantly lower skyscraper count than other megacities, and New Zealand is an island country. Hence the pedestrians faces from higher wind speed all the time. Could this dramatically affect the pedestrian count?
 
-Let's then analyse the weather. Rain should make a pretty big impact on pedestrian count. When I first moved to Auckland. One thing I noticed is that people don't tend to keep an umbrella in their bag. So you often see people running in the rain. Soaking wet. So could this be what makes the CBD a ghost town?
+It appears that the mean for pedestrian count across wind categories remains similar. However there is a noticeable reduction in the number of outliers for storm wind speed. While this suggest that wind speed has some impact on pedestrian count, but this more likely due to the smaller sample size. Looking back at the whole dataset. The average wind speed is 31 km/h. It is no wonder why wind speed has such a little impact on pedestrian count. Because Aucklanders are already used to strong wind!
 
 ```{python}
 def display_box_plot(df, column, title):
@@ -282,12 +283,12 @@ def display_box_plot(df, column, title):
 
 distribution, mean = display_box_plot(working_hour_df, "wind", "Average Pedestrian Count By Wind (8am-6pm)")
 print(distribution)
-print(mean)
+print(merged["wind_speed_10m"].describe()) # Printing out the wind speed mean of the total dataset
 ```
 
-No. Again we are seeing similar trends as the wind speed. While the mean pedestrian count appears similar across all four weather scenario. But there is a noticeable redunction in outliers for both Light Rain/Drizzle and Heavy Rain compared to Clear/Dry. It appears that Aucklanders are very stubborn. No matter if it is pouring outside, or there is a storm. Aucklanders will always get to where they need to be, whether dry or completely soaking wet. This is very inspirational!
+Let's then analyse the weather. Rain should make a pretty big impact on pedestrian count. When I first moved to Auckland. One thing I noticed is that people don't tend to keep an umbrella in their bag. So you often see people running in the rain. Soaking wet. So could this be what makes the CBD a ghost town?
 
-Let's put Aucklanders up to the final test! Let's test the scenario where it is heavy rain with a storm. Will this be the final blow to take down the almighty Aucklanders?
+No. Again we are seeing similar trends as the wind speed. While the mean pedestrian count appears similar across all four weather scenario. But there is a noticeable redunction in outliers for both Light Rain/Drizzle and Heavy Rain compared to Clear/Dry. It appears that Aucklanders are very stubborn. No matter if it is pouring outside, or there is a storm. Aucklanders will always get to where they need to be, whether dry or completely soaking wet. This is very inspirational!
 
 ```{python}
 #| fig-cap: "Average Pedestrian Count By Weather (8am-6pm)"
@@ -295,7 +296,9 @@ distribution, mean = display_box_plot(working_hour_df, "weather", "Average Pedes
 print(distribution)
 ```
 
-No significant difference in the mean again! While the outliers have significantly reduced. But this could be due to the underlying sample has reduced from my rigorous scenario. Perhaps the extreme weather has altered the underlying heat pattern?
+Let's put Aucklanders up to the final test! Let's test the scenario where it is heavy rain with a storm. Will this be the final blow to take down the almighty Aucklanders?
+
+It appears that there are no significant difference in the mean again! While the outliers have significantly reduced. But this could be due to the underlying sample has reduced from my rigorous scenario. 
 
 ```{python}
 def classify_stress(row):
@@ -333,7 +336,7 @@ distribution, mean = display_box_plot(working_hour_df, "weather_stress", "Averag
 print(distribution)
 ```
 
-Looking at the heat map. They all look identical. What if I told you they are actually the same image? That would make a hilarious joke but no. If you look closely, only in high wind speed (Storm) we can see an arise of a new hotspot in the central of CBD. This could be again due to sampling, or because central CBD has a cluster of skyscrapers. The wind is blocked by the skyscrapers altering pedestrian movement pattern. But that goes beyond the study of this article.
+Perhaps the extreme weather has altered the underlying heat pattern? Looking at the heat map. They all look identical. What if I told you they are actually the same image? That would make a hilarious joke but no. If you look closely, only in high wind speed (Storm) we can see an arise of a new hotspot in the central of CBD. This could be again due to sampling, or because central CBD has a cluster of skyscrapers. The wind is blocked by the skyscrapers altering pedestrian movement pattern. But that goes beyond the study of this article.
 
 ```{python}
 
@@ -399,7 +402,6 @@ def display_spatial_map(df, column, geo_df, display_marker=False):
     return m
 ```
 
-Similarly, the underlying pedestrian movement pattern remains similar with different wind and weather conditions.
 ```{python}
 #| fig-cap: "Average Pedestrian Count Spatial Map By Scenarios"
 
@@ -407,6 +409,7 @@ stress = display_spatial_map(working_hour_df, "weather_stress", geo_location, Tr
 stress
 ```
 
+Similarly, the underlying pedestrian movement pattern remains similar with different wind and weather conditions.
 ```{python}
 #| fig-cap: "Average Pedestrian Count Spatial Map By Wind"
 
@@ -421,7 +424,7 @@ weather = display_spatial_map(working_hour_df, "weather", geo_location, True)
 weather
 ```
 
-It appears that my assumption is wrong, and I must admit defeat to Aucklanders. I guess if you are an Aucklander. You will always get to where you need to be if you want to, and it will take more than just the weather to stop you. Round of applause to Aucklanders.
+It appears that my assumption is wrong, and I must admit defeat to Aucklanders. I guess if you are an Aucklander. You will always get to where you need to be if you want to, and it will take more than just the weather to stop you. Auckland CBD does not turn into a ghost town when it is raining or windy. Round of applause to Aucklanders for staying "stubborn".
 
 # Final Remark
 
