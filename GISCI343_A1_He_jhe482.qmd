@@ -38,7 +38,7 @@ ped = ped[ped["Date"] != "Daylight Savings"] # Removing daylight saving data ent
 
 sensor_cols = ped.columns[2:] # Slicing the date and time column from original dataset. Keeping only sensors. 
 
-ped["Datetime"] = pd.to_datetime(ped["Date"] + " " + ped["Time"].str.split("-").str[0]) # Merging date and time
+ped["Datetime"] = pd.to_datetime(ped["Date"] + " " + ped["Time"].str.split("-").str[0], dayfirst=True,format='mixed') # Merging date and time
 
 
 # Creating new columns
